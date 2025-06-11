@@ -69,7 +69,7 @@ import io.mycat.util.HexFormatUtil;
 public class ServerPrepareHandler implements FrontendPrepareHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ServerPrepareHandler.class);
-
+    
     private static Escaper varcharEscaper = null;
 
     static {
@@ -98,6 +98,20 @@ public class ServerPrepareHandler implements FrontendPrepareHandler {
         this.maxPreparedStmtCount = maxPreparedStmtCount;
     }
 
+    /**
+     * 清理指定的预处理语句资源
+     * @param pstmtId 预处理语句ID
+     */
+    public static void closePreparedStatement(long pstmtId) {
+        LOGGER.info("Closing leaked preparestatement: {}", pstmtId);
+        PreparedStatement pstmt = pstmtForId.remove(pstmtId);
+        if (pstmt != null) {
+            LOGGER.info("Successfully cleaned leaked preparestatement: {}", pstmtId);
+        } else {
+            LOGGER.debug("Already cleaned preparestatement: {}", pstmtId);
+        }
+    }
+
     @Override
     public void prepare(String sql) {
 
@@ -115,7 +129,10 @@ public class ServerPrepareHandler implements FrontendPrepareHandler {
             pstmt = new PreparedStatement(PSTMT_ID_GENERATOR.incrementAndGet(), sql,
                     paramCount);
             pstmtForId.put(pstmt.getId(), pstmt);
-            LOGGER.info("preparestatement  parepare id:{}", pstmt.getId());
+            LOGGER.info("preparestatement prepare id:{} for connection:{}", pstmt.getId(), source.getId());
+            
+            // 添加到连接跟踪
+            source.addPreparedStatementId(pstmt.getId());
         }
         PreparedStmtResponse.response(pstmt, source);
     }
@@ -126,7 +143,7 @@ public class ServerPrepareHandler implements FrontendPrepareHandler {
         LongDataPacket packet = new LongDataPacket();
         packet.read(data);
         long pstmtId = packet.getPstmtId();
-        LOGGER.info("preparestatement  long data id:{}", pstmtId);
+        LOGGER.info("preparestatement long data id:{}", pstmtId);
         PreparedStatement pstmt = pstmtForId.get(pstmtId);
         if (pstmt != null) {
             if (LOGGER.isDebugEnabled()) {
@@ -146,7 +163,7 @@ public class ServerPrepareHandler implements FrontendPrepareHandler {
         ResetPacket packet = new ResetPacket();
         packet.read(data);
         long pstmtId = packet.getPstmtId();
-        LOGGER.info("preparestatement  long data id:{}", pstmtId);
+        LOGGER.info("preparestatement reset id:{}", pstmtId);
         PreparedStatement pstmt = pstmtForId.get(pstmtId);
         if (pstmt != null) {
             if (LOGGER.isDebugEnabled()) {
@@ -164,7 +181,7 @@ public class ServerPrepareHandler implements FrontendPrepareHandler {
     public void execute(byte[] data) {
         long pstmtId = ByteUtil.readUB4(data, 5);
         PreparedStatement pstmt = null;
-        LOGGER.info("preparestatement  execute id:{}", pstmtId);
+        LOGGER.info("preparestatement execute id:{}", pstmtId);
         if ((pstmt = pstmtForId.get(pstmtId)) == null) {
             source.writeErrMessage(ErrorCode.ER_ERROR_WHEN_EXECUTING_COMMAND,
                     "Unknown pstmtId when executing.");
@@ -194,11 +211,16 @@ public class ServerPrepareHandler implements FrontendPrepareHandler {
     @Override
     public void close(byte[] data) {
         long pstmtId = ByteUtil.readUB4(data, 5); // 获取prepare stmt id
-        LOGGER.info("preparestatement  close id:{}", pstmtId);
+        LOGGER.info("preparestatement close id:{}", pstmtId);
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("close prepare stmt, stmtId = " + pstmtId);
         }
         PreparedStatement pstmt = pstmtForId.remove(pstmtId);
+        
+        // 从连接跟踪中移除
+        if (pstmt != null) {
+            source.removePreparedStatementId(pstmtId);
+        }
     }
 
     @Override
