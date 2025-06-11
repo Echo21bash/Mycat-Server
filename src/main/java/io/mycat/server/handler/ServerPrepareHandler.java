@@ -28,6 +28,7 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -62,6 +63,7 @@ import io.mycat.net.mysql.ResetPacket;
 import io.mycat.server.ServerConnection;
 import io.mycat.server.response.PreparedStmtResponse;
 import io.mycat.util.HexFormatUtil;
+
 
 /**
  * @author mycat, CrazyPig, zhuam
@@ -303,7 +305,7 @@ public class ServerPrepareHandler implements FrontendPrepareHandler {
                                 parent.replace(x, new SQLCharExpr(value));
                                 return false;
                             }
-                            throw new UnsupportedOperationException("unsupport " + bindValue.value);
+                            throw new UnsupportedOperationException("unsupport " + bindValue.value + " class:" + Optional.ofNullable(bindValue.value).map(i -> i.getClass()).orElse(null));
                     }
 
                     SQLReplaceable parent = (SQLReplaceable) x.getParent();
